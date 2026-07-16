@@ -1,0 +1,295 @@
+import { useState, useEffect, useCallback } from "react";
+import axios from "axios";
+import { toast } from "sonner";
+
+export interface Habitacion {
+  id: number;
+  numero: string;
+  tipo: string;
+  precio: number;
+  disponible: boolean;
+  activo: boolean; // Flag necesario para el Soft-Delete
+}
+
+interface UseBookingModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess?: () => void;
+}
+
+export function useBookingModal({
+  isOpen,
+  onClose,
+  onSuccess,
+}: UseBookingModalProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [habitaciones, setHabitaciones] = useState<Habitacion[]>([]);
+  const [isNombreBloqueado, setIsNombreBloqueado] = useState(false);
+  const [formData, setFormData] = useState({
+    nombreCliente: "",
+    tipoDocumento: "DNI",
+    numeroDocumento: "",
+    fechaIngreso: "",
+    fechaSalida: "",
+    habitacionId: "",
+    estado: "ACTIVA",
+  });
+
+  const hoyLocal = new Date();
+  const anio = hoyLocal.getFullYear();
+  const mes = String(hoyLocal.getMonth() + 1).padStart(2, "0");
+  const dia = String(hoyLocal.getDate()).padStart(2, "0");
+  const hoyString = `${anio}-${mes}-${dia}`; 
+
+  const [allReservas, setAllReservas] = useState<any[]>([]);
+
+  // Reglas de validación para tipos de documentos de identidad en Perú
+  const reglasDocumento: Record<
+    string,
+    { min: number; max: number; pattern: string; placeholder: string }
+  > = {
+    DNI: { min: 8, max: 8, pattern: "[0-9]{8}", placeholder: "Ej. 12345678" },
+    RUC: { min: 11, max: 11, pattern: "[0-9]{11}", placeholder: "Ej. 20123456789" },
+    PASAPORTE: { min: 6, max: 9, pattern: "[A-Za-z0-9]{6,9}", placeholder: "Ej. E123456" },
+  };
+
+  const reglaActual = reglasDocumento[formData.tipoDocumento] || reglasDocumento.DNI;
+
+  useEffect(() => {
+    if (isOpen) {
+      const credentials = localStorage.getItem("auth_token");
+
+      if (!credentials) {
+        console.warn("useBookingModal: No se encontraron credenciales válidas en localStorage.");
+        return;
+      }
+
+      const tokenBase64 = btoa(credentials);
+      const configHeaders = {
+        headers: {
+          Authorization: `Basic ${tokenBase64}`,
+          "Content-Type": "application/json",
+        },
+      };
+
+      Promise.all([
+        axios.get("http://localhost:8080/api/habitaciones", configHeaders),
+        axios.get("http://localhost:8080/api/reservas", configHeaders),
+      ])
+        .then(([resRooms, resReservas]) => {
+          setHabitaciones(Array.isArray(resRooms.data) ? resRooms.data : []);
+          setAllReservas(Array.isArray(resReservas.data) ? resReservas.data : [],
+          );
+        })
+        .catch((err) => {
+          console.error("Error al sincronizar datos en el modal:", err);
+          setHabitaciones([]);
+          setAllReservas([]);
+        });
+    }
+  }, [isOpen]);
+
+  const seguroHabitaciones = Array.isArray(habitaciones) ? habitaciones : [];
+  const seguroReservas = Array.isArray(allReservas) ? allReservas : [];
+
+  // FILTRADO CON CANDADO REACTIVO: Purga del formulario de reservas cualquier habitación borrada lógicamente
+  const habitacionesDisponibles = seguroHabitaciones.filter((room) => {
+    if (!room) return false;
+    
+    // 🔒 CANDADO ABSOLUTO: Si la habitación está inactiva/oculta, no se muestra en el combo box
+    if (room.activo === false) return false;
+
+    if (!formData.fechaIngreso || !formData.fechaSalida) return true;
+
+    const inicioForm = formData.fechaIngreso;
+    const finForm = formData.fechaSalida;
+
+    const tieneChoque = seguroReservas.some((res) => {
+      if (!res || !res.habitacion || res.habitacion.id !== room.id) return false;
+      if (res.estado === "FINALIZADA" || res.estado === "CANCELADA") return false;
+      return inicioForm <= res.fechaSalida && finForm >= res.fechaIngreso;
+    });
+
+    return !tieneChoque;
+  });
+
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
+  ) => {
+    const { name, value } = e.target;
+    setFormData((prev) => {
+      const nuevoEstado = { ...prev, [name]: value };
+      const esReservaNormal = nuevoEstado.estado === "ACTIVA";
+
+      if (name === "fechaIngreso" && nuevoEstado.fechaSalida) {
+        if (esReservaNormal) {
+          if (nuevoEstado.fechaSalida < value) {
+            nuevoEstado.fechaSalida = "";
+            toast.info("Para reservas, la fecha de salida debe ser posterior al ingreso.");
+          }
+        } else {
+          if (nuevoEstado.fechaSalida < value) {
+            nuevoEstado.fechaSalida = "";
+            toast.error("La fecha de fin no puede ser anterior a la de inicio.");
+          }
+        }
+      }
+      return nuevoEstado;
+    });
+  };
+
+  const handleDocumentoChange = (valor: string) => {
+    let filtrado = valor;
+    if (formData.tipoDocumento === "DNI") {
+      filtrado = valor.replace(/\D/g, "").slice(0, 8);
+    } else if (formData.tipoDocumento === "RUC") {
+      filtrado = valor.replace(/\D/g, "").slice(0, 11);
+    } else if (formData.tipoDocumento === "PASAPORTE") {
+      filtrado = valor.replace(/[^A-Za-z0-9]/g, "").slice(0, 9);
+    }
+
+    setFormData((prev) => {
+      const nuevoEstado = { ...prev, numeroDocumento: filtrado };
+      if (filtrado.length === reglasDocumento[prev.tipoDocumento]?.max) {
+        const clienteEncontrado = seguroReservas.find(
+          (res) =>
+            res &&
+            res.numeroDocumento &&
+            res.numeroDocumento.trim() === filtrado.trim(),
+        );
+        if (clienteEncontrado) {
+          nuevoEstado.nombreCliente = clienteEncontrado.nombreCliente;
+          setIsNombreBloqueado(true);
+          toast.success(`Huésped frecuente: Nombre fijado automáticamente.`, {
+            style: { background: "#1E3A8A", color: "white", border: "none" },
+            duration: 3000,
+          });
+        } else {
+          setIsNombreBloqueado(false);
+        }
+      } else {
+        setIsNombreBloqueado(false);
+      }
+      return nuevoEstado;
+    });
+  };
+
+  const cambiarTipoDocumento = (tipo: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      tipoDocumento: tipo,
+      numeroDocumento: "",
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.habitacionId) {
+      toast.error("Por favor, selecciona una habitación.");
+      return;
+    }
+
+    const esReservaNormal = formData.estado === "ACTIVA";
+    if (esReservaNormal) {
+      if (formData.fechaSalida <= formData.fechaIngreso) {
+        toast.error("La fecha de salida debe ser posterior a la de ingreso.");
+        return;
+      }
+
+      const clienteActivoHoy = seguroReservas.find((res) => {
+        return (
+          res &&
+          res.estado === "ACTIVA" &&
+          res.numeroDocumento &&
+          res.numeroDocumento.trim() === formData.numeroDocumento.trim()
+        );
+      });
+
+      if (clienteActivoHoy) {
+        toast.error(
+          `Denegado: El DNI ${formData.numeroDocumento} ya se encuentra hospedado en este momento en la Habitación ${clienteActivoHoy.habitacion?.numero} a nombre de ${clienteActivoHoy.nombreCliente}.`,
+          {
+            style: { background: "#DC2626", color: "white", border: "none" },
+            duration: 6000,
+          },
+        );
+        return; 
+      }
+    } else {
+      if (formData.fechaSalida < formData.fechaIngreso) {
+        toast.error("La fecha de finalización no puede ser anterior a la de inicio.");
+        return;
+      }
+    }
+
+    setIsSubmitting(true);
+
+    const payload = {
+      nombreCliente: esReservaNormal ? formData.nombreCliente : `🛠️ INTERNO: ${formData.estado}`,
+      tipoDocumento: esReservaNormal ? formData.tipoDocumento : "DNI",
+      numeroDocumento: esReservaNormal ? formData.numeroDocumento : "00000000",
+      fechaIngreso: formData.fechaIngreso,
+      fechaSalida: formData.fechaSalida,
+      estado: formData.estado,
+      habitacion: { id: parseInt(formData.habitacionId, 10) },
+    };
+
+    const credentials = localStorage.getItem("auth_token");
+    if (!credentials) {
+      toast.error("Sesión expirada. Por favor, inicia sesión nuevamente.");
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      const tokenBase64 = btoa(credentials);
+      const configHeaders = {
+        headers: {
+          Authorization: `Basic ${tokenBase64}`,
+          "Content-Type": "application/json",
+        },
+      };
+
+      await axios.post("http://localhost:8080/api/reservas", payload, configHeaders);
+
+      toast.success("Operación realizada con éxito", {
+        style: { background: "#059669", color: "white", border: "none" },
+      });
+
+      setFormData({
+        nombreCliente: "",
+        numeroDocumento: "",
+        tipoDocumento: "DNI",
+        fechaIngreso: "",
+        fechaSalida: "",
+        habitacionId: "",
+        estado: "ACTIVA",
+      });
+
+      onSuccess?.();
+      onClose();
+    } catch (error: any) {
+      console.error(error);
+      if (error.response && error.response.status === 409) {
+        toast.error(error.response.data);
+      } else {
+        toast.error("Error al procesar la solicitud.");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return {
+    formData,
+    isSubmitting,
+    habitaciones: habitacionesDisponibles, // Renombrado internamente para alimentar directo a tu select visual
+    reglaActual,
+    hoyString,
+    isNombreBloqueado,
+    handleChange,
+    handleDocumentoChange,
+    cambiarTipoDocumento,
+    handleSubmit,
+  };
+}
