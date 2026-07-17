@@ -1,16 +1,17 @@
+// reports/services/reportExportService.ts
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { ReportReservation, ReservaCancelada } from "../types/reports";
 
-// Configuración limpia de estilos corporativos para jsPDF
+// Configuración limpia de estilos corporativos con strings hexadecimales
 const tableStyles: any = {
   headStyles: {
-    fillColor: new Array(30, 41, 59),
-    textColor: new Array(255, 255, 255),
+    fillColor: "#1e293b",
+    textColor: "#ffffff",
     fontStyle: "bold",
   },
   alternateRowStyles: {
-    fillColor: new Array(248, 250, 252),
+    fillColor: "#f8fafc",
   },
   styles: {
     fontSize: 9,
@@ -38,17 +39,19 @@ const drawHeader = (doc: jsPDF, subtitle: string) => {
   doc.text(`Impreso: ${new Date().toLocaleDateString()}`, 572, 52, {
     align: "right",
   });
-  doc.setTextColor(51, 65, 85);
 };
 
 // --- HELPER CONTABLE DE NOCHES LOCALES ---
 const calcularNochesSeguras = (ingreso: string, salida: string): number => {
   if (!ingreso || !salida) return 1;
-  const noches = Math.ceil((new Date(salida).getTime() - new Date(ingreso).getTime()) / (1000 * 60 * 60 * 24));
+  const noches = Math.ceil(
+    (new Date(salida).getTime() - new Date(ingreso).getTime()) /
+      (1000 * 60 * 60 * 24),
+  );
   return noches <= 0 ? 1 : noches;
 };
 
-// 🧾 A) EXPORTACIÓN DE BOLETA ÚNICA POR RESERVA (ACTUALIZADO CON NOCHES)
+// 🧾 A) EXPORTACIÓN DE BOLETA ÚNICA POR RESERVA
 export const exportReservationBoleta = (reserva: ReportReservation) => {
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   drawHeader(doc, `BOLETA DE RESERVA # ${reserva.id}`);
@@ -60,88 +63,240 @@ export const exportReservationBoleta = (reserva: ReportReservation) => {
   doc.line(40, 116, 572, 116);
 
   doc.setFont("helvetica", "normal");
-  doc.text(`Cliente:`, 40, 135); doc.text(`${reserva.nombreCliente || "-"}`, 160, 135);
-  doc.text(`Documento:`, 40, 153); doc.text(`${`${reserva.tipoDocumento || ""} ${reserva.numeroDocumento || ""}`.trim() || "-"}`, 160, 153);
-  doc.text(`Fecha de ingreso:`, 40, 171); doc.text(`${reserva.fechaIngreso}`, 160, 171);
-  doc.text(`Fecha de salida:`, 40, 189); doc.text(`${reserva.fechaSalida}`, 160, 189);
-  doc.text(`Estado:`, 40, 207); doc.text(`${reserva.estado || "-"}`, 160, 207);
+  doc.setTextColor("#1e293b");
+  doc.text(`Cliente:`, 40, 135);
+  doc.text(`${reserva.nombreCliente || "-"}`, 160, 135);
+  doc.text(`Documento:`, 40, 153);
+  doc.text(
+    `${`${reserva.tipoDocumento || ""} ${reserva.numeroDocumento || ""}`.trim() || "-"}`,
+    160,
+    153,
+  );
+  doc.text(`Fecha de ingreso:`, 40, 171);
+  doc.text(`${reserva.fechaIngreso}`, 160, 171);
+  doc.text(`Fecha de salida:`, 40, 189);
+  doc.text(`${reserva.fechaSalida}`, 160, 189);
+  doc.text(`Estado:`, 40, 207);
+  doc.text(`${reserva.estado || "-"}`, 160, 207);
 
   doc.setFont("helvetica", "bold");
   doc.text("DETALLE DEL SERVICIO", 40, 240);
   doc.line(40, 246, 572, 246);
 
-  // Calculamos las noches para inyectarlas en el desglose de la boleta impresa
-  const noches = calcularNochesSeguras(reserva.fechaIngreso, reserva.fechaSalida);
+  const noches = calcularNochesSeguras(
+    reserva.fechaIngreso,
+    reserva.fechaSalida,
+  );
   const precioUnitario = reserva.habitacion?.precio ?? 0;
 
   autoTable(doc as any, {
     startY: 260,
-    head: [["Habitación", "Tipo", "Noches Hospedadas", "Precio / Noche", "Total Cobrado"]], // 🆕 Columnas reestructuradas
-    body: [[
-      reserva.habitacion?.numero || "-",
-      reserva.habitacion?.tipo || "-",
-      `${noches} ${noches === 1 ? 'noche' : 'noches'}`, // 🆕 Campo inyectado
-      formatCurrency(precioUnitario), // 🆕 Tarifa base
-      formatCurrency(
-        reserva.costo && reserva.costo > 0 
-          ? reserva.costo 
-          : noches * precioUnitario
-      )
-    ]],
+    head: [
+      [
+        "Habitación",
+        "Tipo",
+        "Noches Hospedadas",
+        "Precio / Noche",
+        "Total Cobrado",
+      ],
+    ],
+    body: [
+      [
+        reserva.habitacion?.numero || "-",
+        reserva.habitacion?.tipo || "-",
+        `${noches} ${noches === 1 ? "noche" : "noches"}`,
+        formatCurrency(precioUnitario),
+        formatCurrency(
+          reserva.costo && reserva.costo > 0
+            ? reserva.costo
+            : noches * precioUnitario,
+        ),
+      ],
+    ],
     ...tableStyles,
   });
 
-  doc.save(`boleta_reserva_${reserva.id}_${new Date().toISOString().slice(0, 10)}.pdf`);
+  doc.save(
+    `boleta_reserva_${reserva.id}_${new Date().toISOString().slice(0, 10)}.pdf`,
+  );
 };
 
-// 📊 B) EXPORTACIÓN DE REPORTES TABULARES COMPLETOS (ACTUALIZADO CON NOCHES)
-export const handleExportPDF = (activeTab: string, tabLabel: string, reservasTodas: ReportReservation[], reservasCanceladas: ReservaCancelada[]) => {
+// 📊 B) EXPORTACIÓN DE REPORTES TABULARES COMPLETOS (CON TOTALES)
+export const handleExportPDF = (
+  activeTab: string,
+  tabLabel: string,
+  reservasTodas: ReportReservation[],
+  reservasCanceladas: ReservaCancelada[],
+) => {
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   drawHeader(doc, `REPORTE: ${tabLabel.toUpperCase()}`);
 
-  if (activeTab === "por-fechas" || activeTab === "ingresos-stock") {
-    const bodyRows = reservasTodas.map((r) => {
+  if (
+    activeTab === "ventas-control" || // 👈 AGREGADO: Permite descargar en la pestaña principal
+    activeTab === "registros-eliminados" || // 👈 AGREGADO: Permite descargar las cancelaciones
+    activeTab === "por-fechas" ||
+    activeTab === "ingresos-stock" ||
+    activeTab === "max-min-medio" ||
+    activeTab === "indicadores"
+  ) {
+    const preciosArray = reservasTodas
+      .map((r) => {
+        if (r.estado === "CANCELADA") return 0; // Ignorar canceladas en la suma
+
+        const noches = calcularNochesSeguras(r.fechaIngreso, r.fechaSalida);
+        const precioPorNoche = r.habitacion?.precio ?? 0;
+        return r.costo && r.costo > 0 ? r.costo : noches * precioPorNoche;
+      })
+      .filter((precio) => precio > 0);
+
+    const kpiMax = preciosArray.length > 0 ? Math.max(...preciosArray) : 0;
+    const kpiMin = preciosArray.length > 0 ? Math.min(...preciosArray) : 0;
+    const kpiAvg =
+      preciosArray.length > 0
+        ? preciosArray.reduce((a, b) => a + b, 0) / preciosArray.length
+        : 0;
+    const sumatoriaTotalGeneral = preciosArray.reduce(
+      (acc, curr) => acc + curr,
+      0,
+    );
+
+    let startTableY = 130;
+
+    if (activeTab === "max-min-medio") {
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor("#0f172a");
+      doc.text("BALANCES Y CONTABILIDAD DE INDICADORES", 40, 105);
+      doc.setDrawColor(226, 232, 240);
+      doc.line(40, 110, 572, 110);
+
+      autoTable(doc as any, {
+        startY: 120,
+        head: [["Métrica Financiera", "Monto Liquidado Auditado"]],
+        body: [
+          ["Máximo Ingreso Diario Registrado", formatCurrency(kpiMax)],
+          ["Mínimo Ingreso Diario Registrado", formatCurrency(kpiMin)],
+          ["Promedio de Ingreso Diario General", formatCurrency(kpiAvg)],
+        ],
+        ...tableStyles,
+      });
+
+      startTableY = (doc as any).lastAutoTable.finalY + 30;
+    }
+
+    const bodyRows: any[] = reservasTodas.map((r) => {
       const noches = calcularNochesSeguras(r.fechaIngreso, r.fechaSalida);
       const precioUnitario = r.habitacion?.precio ?? 0;
+      const totalFila =
+        r.costo && r.costo > 0 ? r.costo : noches * precioUnitario;
+
       return [
         String(r.id),
         r.fechaIngreso,
         r.nombreCliente || "-",
-        `Hab ${r.habitacion?.numero || "S/N"}`,
-        `${noches} ${noches === 1 ? 'noche' : 'noches'}`, // 🆕 Columna inyectada
-        formatCurrency(precioUnitario), // 🆕 Columna inyectada
-        formatCurrency(r.costo && r.costo > 0 ? r.costo : noches * precioUnitario)
+        `Hab ${r.habitacion?.numero || "S/N"} (${r.habitacion?.tipo || "-"})`,
+        `${noches} ${noches === 1 ? "noche" : "noches"}`,
+        formatCurrency(precioUnitario),
+        formatCurrency(totalFila),
       ];
     });
 
+    const footRow = [
+      {
+        content: "TOTAL GENERAL LIQUIDADO EN CAJA",
+        colSpan: 6,
+        styles: { halign: "right", fontStyle: "bold" },
+      },
+      {
+        content: formatCurrency(sumatoriaTotalGeneral),
+        styles: { fontStyle: "bold" },
+      },
+    ];
+
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
-    doc.text(`Total registros auditados en rango: ${reservasTodas.length}`, 40, 110);
-    
+    doc.setTextColor("#0f172a");
+    doc.text(
+      `Detalle de auditoría contable — Registros: ${reservasTodas.length}`,
+      40,
+      startTableY - 15,
+    );
+
     autoTable(doc as any, {
-      startY: 130,
-      head: [["ID", "Check-In", "Cliente Huésped", "Habitación", "Noches", "Tarifa Base", "Monto Liquidado"]], // 🆕 Cabecera mapeada
+      startY: startTableY,
+      head: [
+        [
+          "ID",
+          "Check-In",
+          "Cliente Huésped",
+          "Habitación",
+          "Noches",
+          "Tarifa Base",
+          "Monto Liquidado",
+        ],
+      ],
       body: bodyRows,
+      foot: [footRow],
+      footStyles: {
+        fillColor: "#0f172a",
+        textColor: "#ffffff",
+        fontSize: 9,
+      },
       ...tableStyles,
     });
-    doc.save(`reporte_${activeTab}_${new Date().toISOString().slice(0, 10)}.pdf`);
+
+    doc.save(
+      `reporte_${activeTab}_${new Date().toISOString().slice(0, 10)}.pdf`,
+    );
     return;
   }
 
   if (activeTab === "cancelaciones") {
+    const totalPerdidas = reservasCanceladas.reduce(
+      (acc, curr) => acc + (curr.precioHabitacion ?? 0),
+      0,
+    );
+
+    const bodyRows = reservasCanceladas.map((r) => [
+      String(r.id),
+      r.nombreCliente,
+      r.fechaSalida || "-",
+      r.motivoCancelacion || "Sin justificar",
+      formatCurrency(r.precioHabitacion ?? 0),
+    ]);
+
+    const footRow = [
+      {
+        content: "TOTAL DE PÉRDIDAS ACUMULADAS",
+        colSpan: 4,
+        styles: { halign: "right", fontStyle: "bold" },
+      },
+      { content: formatCurrency(totalPerdidas), styles: { fontStyle: "bold" } },
+    ];
+
     autoTable(doc as any, {
       startY: 110,
-      head: [["ID Reserva", "Cliente Pasajero", "Fecha de Salida", "Motivo de Anulación", "Pérdida (S/.)"]],
-      body: reservasCanceladas.map((r) => [
-        String(r.id),
-        r.nombreCliente,
-        r.fechaSalida || "-",
-        r.motivoCancelacion || "Sin justificar",
-        formatCurrency(r.precioHabitacion ?? 0),
-      ]),
+      head: [
+        [
+          "ID Reserva",
+          "Cliente Pasajero",
+          "Fecha de Salida",
+          "Motivo de Anulación",
+          "Pérdida (S/.)",
+        ],
+      ],
+      body: bodyRows,
+      foot: [footRow],
+      footStyles: {
+        fillColor: "#0f172a",
+        textColor: "#ffffff",
+        fontSize: 9,
+      },
       ...tableStyles,
     });
-    doc.save(`reporte_${activeTab}_${new Date().toISOString().slice(0, 10)}.pdf`);
+    doc.save(
+      `reporte_${activeTab}_${new Date().toISOString().slice(0, 10)}.pdf`,
+    );
     return;
   }
 };

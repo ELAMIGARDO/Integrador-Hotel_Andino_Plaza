@@ -36,18 +36,26 @@ export const DateRevenueTab: React.FC<DateRevenueTabProps> = ({
                 axisLine={false} 
                 tickLine={false} 
                 tick={{ fontSize: 11, fontWeight: 500 }} 
+                className="fill-slate-600 dark:fill-slate-400"
                 dy={10} 
               />
               <YAxis 
                 axisLine={false} 
                 tickLine={false} 
                 tick={{ fontSize: 11, fontWeight: 500 }} 
+                className="fill-slate-600 dark:fill-slate-400"
                 tickFormatter={(val) => `S/.${val}`} 
               />
               <Tooltip 
-                cursor={{ fill: 'rgba(241, 245, 249, 0.4)' }}
-                contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0' }}
-                formatter={(value: any) => [formatCurrency(Number(value)), "Ingresos Neto"]} 
+                cursor={{ fill: 'rgba(241, 245, 249, 0.15)' }}
+                contentStyle={{ 
+                  borderRadius: '12px', 
+                  backgroundColor: 'var(--background-color, #ffffff)',
+                  border: '1px solid #e2e8f0' 
+                }}
+                // Customización para que no rompa el diseño oscuro
+                itemStyle={{ fontWeight: 'bold' }}
+                formatter={(value: any) => [formatCurrency(Number(value)), "Ingreso Neto"]} 
               />
               <Bar dataKey="ingresos" fill="#2563eb" radius={[6, 6, 0, 0]} maxBarSize={32} />
             </BarChart>

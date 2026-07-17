@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { ReportReservation } from "../types/reports";
 
 interface StockInventoryTabProps {
@@ -26,12 +26,22 @@ export const StockInventoryTab: React.FC<StockInventoryTabProps> = ({
   totalIngresos,
   formatCurrency,
 }) => {
-  const totalRealLiquidado = reservas.reduce((sum, r) => {
-    const noches = calcularNochesSeguras(r.fechaIngreso, r.fechaSalida);
-    const precioHab = r.habitacion?.precio ?? 0;
-    const monto = r.costo && r.costo > 0 ? r.costo : noches * precioHab;
-    return sum + monto;
-  }, 0);
+  // 🛡️ 1. FILTRADO ESTRICTO: Excluye de forma segura cancelaciones de las métricas financieras
+  const reservasValidas = useMemo(() => {
+    return reservas.filter(
+      (r) => r && r.estado !== "CANCELADA" && r.estado !== "MANTENIMIENTO"
+    );
+  }, [reservas]);
+
+  // 🛠️ 2. CORRECCIÓN: Ahora suma basándose únicamente en transacciones reales liquidadas
+  const totalRealLiquidado = useMemo(() => {
+    return reservasValidas.reduce((sum, r) => {
+      const noches = calcularNochesSeguras(r.fechaIngreso, r.fechaSalida);
+      const precioHab = r.habitacion?.precio ?? 0;
+      const monto = r.costo && r.costo > 0 ? r.costo : noches * precioHab;
+      return sum + monto;
+    }, 0);
+  }, [reservasValidas]);
 
   return (
     <div className="space-y-6">
@@ -42,9 +52,7 @@ export const StockInventoryTab: React.FC<StockInventoryTabProps> = ({
             Flujo Bruto Realizado
           </p>
           <p className="mt-3 text-2xl font-bold text-slate-900 dark:text-white">
-            {formatCurrency(
-              totalRealLiquidado > 0 ? totalRealLiquidado : totalIngresos,
-            )}
+            {formatCurrency(totalRealLiquidado)}
           </p>
         </div>
         <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700/60 shadow-sm p-6">
@@ -68,9 +76,7 @@ export const StockInventoryTab: React.FC<StockInventoryTabProps> = ({
             Utilidad Neta Auditada
           </p>
           <p className="mt-3 text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-            {formatCurrency(
-              totalRealLiquidado > 0 ? totalRealLiquidado : totalIngresos,
-            )}
+            {formatCurrency(totalRealLiquidado)}
           </p>
         </div>
       </div>
@@ -97,16 +103,16 @@ export const StockInventoryTab: React.FC<StockInventoryTabProps> = ({
                 <th className="px-6 py-3">Check-Out</th>
                 <th className="px-6 py-3">Nro. Habitación</th>
                 <th className="px-6 py-3 text-center">Noches</th>
-                {/* 🆕 1. AGREGAMOS EL ENCABEZADO DE TARIFA POR NOCHE */}
                 <th className="px-6 py-3 text-right">Tarifa / Noche</th>
                 <th className="px-6 py-3 text-right">Rendimiento Cobrado</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700/40 text-sm">
-              {reservas.map((r) => {
+              {/* 🔄 Mapeamos la lista limpia filtrada */}
+              {reservasValidas.map((r) => {
                 const noches = calcularNochesSeguras(
                   r.fechaIngreso,
-                  r.fechaSalida,
+                  r.fechaSalida
                 );
                 const precioHab = r.habitacion?.precio ?? 0;
                 const montoReserva =
@@ -139,7 +145,6 @@ export const StockInventoryTab: React.FC<StockInventoryTabProps> = ({
                         {noches} {noches === 1 ? "noche" : "noches"}
                       </span>
                     </td> 
-                    {/* 🆕 2. INYECTAMOS LA CELDA VISUAL DE LA TARIFA BASE UNITARIA */}
                     <td className="px-6 py-3 text-right font-medium text-slate-600 dark:text-slate-400">
                       {formatCurrency(precioHab)}
                     </td>

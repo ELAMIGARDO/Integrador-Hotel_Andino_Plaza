@@ -45,13 +45,13 @@ export function RegisterView() {
       return;
     }
 
-    // 2. 🔐 CANDADO DE SEGURIDAD EXCLUSIVO: Expresión regular para la contraseña
-    // Requiere mínimo 6 caracteres, al menos una letra mayúscula y al menos un carácter especial
-    const passwordRegex = /^(?=.*[A-Z])(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{6,}$/;
+    // 2. 🔐 CANDADO DE SEGURIDAD EXCLUSIVO: Expresión regular para la contraseña de exactamente 8 caracteres
+    // Requiere exactamente 8 caracteres, al menos una letra mayúscula y al menos un carácter especial
+    const passwordRegex = /^(?=.*[A-Z])(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?])(?=.{8}$)/;
 
     if (!passwordRegex.test(password)) {
       setError(
-        "La contraseña es muy débil. Debe incluir obligatoriamente al menos una letra MAYÚSCULA, un carácter especial (Ej: @, $, !, #, *) y tener un mínimo de 6 caracteres."
+        "La contraseña no es válida. Debe incluir obligatoriamente al menos una letra MAYÚSCULA, un carácter especial (Ej: @, $, !, #, *) y tener EXACTAMENTE 8 caracteres de longitud."
       );
       toast.error("Contraseña no cumple con los requisitos de seguridad.");
       return;
@@ -145,7 +145,7 @@ export function RegisterView() {
                 <option value="PASAPORTE">PAS.</option>
               </select>
             </div>
-            
+
             <div className="col-span-2">
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                 Número de Documento
@@ -185,8 +185,9 @@ export function RegisterView() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                maxLength={8} // 👈 Candado visual nativo: no permite escribir físicamente más de 8 letras
                 className="w-full px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 pr-11"
-                placeholder="Mínimo 6 caracteres"
+                placeholder="Exactamente 8 caracteres"
               />
               <button
                 type="button"
@@ -197,9 +198,9 @@ export function RegisterView() {
               </button>
             </div>
             
-            {/* Pequeña guía visual informativa debajo del campo */}
+            {/* Guía visual informativa actualizada */}
             <p className="text-[11px] text-slate-400 mt-1.5 flex items-center gap-1">
-              <ShieldCheck size={12} className="text-blue-500" /> Requerido: 1 Mayúscula y 1 Carácter Especial (@, !, #, $, etc.)
+              <ShieldCheck size={12} className="text-blue-500" /> Requerido: 8 caracteres (1 Mayúscula y 1 Símbolo Especial)
             </p>
           </div>
 

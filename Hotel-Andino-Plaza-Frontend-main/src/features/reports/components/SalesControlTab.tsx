@@ -7,7 +7,6 @@ interface SalesControlTabProps {
   onExportBoleta: (reserva: ReportReservation) => void;
 }
 
-// 🛡️ Helper seguro para cálculo de noches locales (Evita desfases de zonas horarias UTC)
 const calcularNochesSeguras = (ingreso: string, salida: string): number => {
   if (!ingreso || !salida) return 1;
   const fechaIn = new Date(ingreso);
@@ -38,6 +37,7 @@ export const SalesControlTab: React.FC<SalesControlTabProps> = ({
               <th className="px-6 py-3.5">Check-In</th>
               <th className="px-6 py-3.5">Check-Out</th>
               <th className="px-6 py-3.5">Habitación</th>
+              <th className="px-6 py-3.5">Estado</th>
               <th className="px-6 py-3.5 text-right">Monto</th>
               <th className="px-6 py-3.5 text-center">Acción</th>
             </tr>
@@ -47,10 +47,11 @@ export const SalesControlTab: React.FC<SalesControlTabProps> = ({
               const noches = calcularNochesSeguras(reserva.fechaIngreso, reserva.fechaSalida);
               const precioPorNoche = reserva.habitacion?.precio ?? 0;
               
-              // Si el costo viene en 0 o null desde el Backend, calcula: noches * precio de habitación
               const montoFinal = reserva.costo && reserva.costo > 0 
                 ? reserva.costo 
                 : noches * precioPorNoche;
+
+              const estadoUpper = reserva.estado?.toUpperCase() || "ACTIVA";
 
               return (
                 <tr key={reserva.id} className="hover:bg-slate-50/40 dark:hover:bg-slate-700/20 transition-colors">
@@ -61,6 +62,20 @@ export const SalesControlTab: React.FC<SalesControlTabProps> = ({
                   <td className="px-6 py-3.5 text-slate-600 dark:text-slate-400">{reserva.fechaSalida}</td>
                   <td className="px-6 py-3.5 text-slate-600 dark:text-slate-400">
                     <span className="font-semibold text-slate-700 dark:text-slate-300">Hab {reserva.habitacion?.numero}</span> ({reserva.habitacion?.tipo})
+                  </td>
+                  <td className="px-6 py-3.5 whitespace-nowrap">
+                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold tracking-wide
+                      ${estadoUpper === 'ACTIVA' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800/40' : ''}
+                      ${estadoUpper === 'FINALIZADA' ? 'bg-blue-50 text-blue-700 border border-blue-200/60 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800/40' : ''}
+                      ${estadoUpper === 'CANCELADA' ? 'bg-rose-50 text-rose-700 border border-rose-200/60 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800/40' : ''}
+                    `}>
+                      <span className={`w-1.5 h-1.5 rounded-full mr-1.5 
+                        ${estadoUpper === 'ACTIVA' ? 'bg-emerald-500' : ''}
+                        ${estadoUpper === 'FINALIZADA' ? 'bg-blue-500' : ''}
+                        ${estadoUpper === 'CANCELADA' ? 'bg-rose-500' : ''}
+                      `} />
+                      {estadoUpper}
+                    </span>
                   </td>
                   <td className="px-6 py-3.5 text-right font-bold text-slate-900 dark:text-slate-200">
                     {formatCurrency(montoFinal)}

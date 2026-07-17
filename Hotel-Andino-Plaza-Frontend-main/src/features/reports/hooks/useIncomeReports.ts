@@ -126,7 +126,7 @@ export function useIncomeReports() {
     }
   }, []);
 
-  // 4. 🔄 Efecto de ciclo de vida ordenado (Ambas funciones ya existen en el scope superior)
+  // 4. 🔄 Efecto de ciclo de vida ordenado
   useEffect(() => {
     cargarDatosEstadisticos(fechaInicio, fechaFin);
     fetchReservasTodas();
@@ -137,7 +137,7 @@ export function useIncomeReports() {
     cargarDatosEstadisticos(fechaInicio, fechaFin);
   };
 
-  // 6. 📊 Filtros Memorizados y calculados de forma segura
+  // 6. 📊 Filtros Memorizados y calculados de forma segura (SOLO EXTRACCIÓN DE CANCELADAS)
   const reservasCanceladas = useMemo<ReservaCancelada[]>(() => {
     return reservas
       .filter((r) => r?.estado === "CANCELADA")
@@ -147,9 +147,8 @@ export function useIncomeReports() {
         fechaSalida: r.fechaSalida,
         motivoCancelacion: r.motivoCancelacion || "Anulación sin especificar",
         precioHabitacion:
-          r.costo ??
           calcularNochesSeguras(r.fechaIngreso, r.fechaSalida) *
-            (r.habitacion?.precio ?? 0),
+          (r.habitacion?.precio ?? 0),
       }));
   }, [reservas]);
 
@@ -174,14 +173,14 @@ export function useIncomeReports() {
     ];
   }, [habitacionesCount, totalActivas]);
 
-  // 8. 🧹 Filtrado estricto anti-dinero ficticio y bloqueos de mantenimiento
+  // 8. 🧹 FILTRADO FINANCIERO CORREGIDO (Excluye canceladas y bloqueos)
   const reservasValidadasFinancieras = useMemo(() => {
     return reservas.filter(
       (r) =>
         r &&
         r.estado !== "MANTENIMIENTO" &&
+        r.estado !== "CANCELADA" && // 👈 ¡CORREGIDO! No se suma dinero de canceladas
         r.numeroDocumento !== MAINTENANCE_DOC &&
-        // Condición corregida: Excluye de forma segura si el nombre empieza con "INTERNO:"
         !r.nombreCliente?.toUpperCase().startsWith("INTERNO"),
     );
   }, [reservas]);
@@ -200,7 +199,6 @@ export function useIncomeReports() {
             : `RES-${r.id}`;
           return {
             name: primerNombre.toUpperCase(),
-            // Prioriza el costo neto de BD, si es nulo calcula noches * precio
             ingresos:
               r.costo && r.costo > 0
                 ? r.costo
@@ -241,16 +239,22 @@ export function useIncomeReports() {
     });
   }, [filtroDias, reservasValidadasFinancieras]);
 
-  // 10. 💵 Suma Acumulada del Dashboard
-  const totalIngresosAcumulados = useMemo(
-    () => revenueData.reduce((sum, item) => sum + item.ingresos, 0),
-    [revenueData],
-  );
+  // 10. 💵 TOTAL ACUMULADO FINANCIERO CORREGIDO (Calcula sobre todo el universo filtrado, no solo de los últimos 7 elementos del gráfico)
+  const totalIngresosAcumulados = useMemo(() => {
+    return reservasValidadasFinancieras.reduce((sum, r) => {
+      const noches = calcularNochesSeguras(r.fechaIngreso, r.fechaSalida);
+      const montoReal =
+        r.costo && r.costo > 0 ? r.costo : noches * (r.habitacion?.precio || 0);
+      return sum + montoReal;
+    }, 0);
+  }, [reservasValidadasFinancieras]);
 
-  // 11. 🧾 Exportación Segura a CSV
+  // 11. 🧾 Exportación Segura a CSV (Solo exporta datos financieros reales)
   const exportarExcelCSV = useCallback(() => {
-    if (reservas.length === 0) {
-      toast.warning("No se encontraron registros financieros en este bloque.");
+    if (reservasValidadasFinancieras.length === 0) {
+      toast.warning(
+        "No se encontraron registros financieros válidos en este bloque.",
+      );
       return;
     }
 
@@ -263,24 +267,19 @@ export function useIncomeReports() {
       "Estado",
       "Monto Total (S/.)",
     ];
-    const filasCSV = reservas
-      .filter(
-        (r) =>
-          r.numeroDocumento !== MAINTENANCE_DOC && r.estado !== "MANTENIMIENTO",
-      )
-      .map((r) => {
-        const noches = calcularNochesSeguras(r.fechaIngreso, r.fechaSalida);
-        const totalMonto = r.costo ?? noches * (r.habitacion?.precio || 0);
-        return [
-          `RES-${r.id}`,
-          `"${r.nombreCliente.replace(/"/g, '""')}"`,
-          r.numeroDocumento,
-          r.fechaIngreso,
-          r.fechaSalida,
-          r.estado,
-          totalMonto.toFixed(2),
-        ].join(",");
-      });
+    const filasCSV = reservasValidadasFinancieras.map((r) => {
+      const noches = calcularNochesSeguras(r.fechaIngreso, r.fechaSalida);
+      const totalMonto = r.costo ?? noches * (r.habitacion?.precio || 0);
+      return [
+        `RES-${r.id}`,
+        `"${r.nombreCliente.replace(/"/g, '""')}"`,
+        r.numeroDocumento,
+        r.fechaIngreso,
+        r.fechaSalida,
+        r.estado,
+        totalMonto.toFixed(2),
+      ].join(",");
+    });
 
     const contenidoCSV = [encabezados.join(","), ...filasCSV].join("\n");
     const blob = new Blob(["\uFEFF" + contenidoCSV], {
@@ -300,12 +299,12 @@ export function useIncomeReports() {
     URL.revokeObjectURL(url);
 
     toast.success("Reporte financiero exportado con éxito.");
-  }, [reservas, filtroDias]);
+  }, [reservasValidadasFinancieras, filtroDias]);
 
   return {
     loading,
     totalIngresosAcumulados,
-    porcentajeOcupadas: occupancyData?.[0]?.value ?? 0, // Acceso indexado seguro a Recharts
+    porcentajeOcupadas: occupancyData?.[0]?.value ?? 0,
     occupancyData,
     revenueData,
     reservasCanceladas,
@@ -317,8 +316,8 @@ export function useIncomeReports() {
     setFechaFin,
     exportarExcelCSV,
     reservasTodas,
-    // 🛡️ Retornamos de forma directa el estado de reservas para poblar las tablas visuales
-    reservasDetalle: reservas,
+    // 🛡️ Retorna la lista limpia filtrada sin cancelaciones para las vistas financieras
+    reservasDetalle: reservasValidadasFinancieras,
     aplicarFiltros,
   };
 }

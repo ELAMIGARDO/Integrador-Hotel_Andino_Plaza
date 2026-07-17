@@ -10,6 +10,9 @@ export const CancellationsTab: React.FC<CancellationsTabProps> = ({
   cancelaciones,
   formatCurrency,
 }) => {
+  // Calculamos la pérdida total acumulada para transparencia de auditoría
+  const perdidaTotal = cancelaciones.reduce((sum, c) => sum + (c.precioHabitacion ?? 0), 0);
+
   return (
     <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700/60 shadow-sm overflow-hidden">
       <div className="px-6 py-5 border-b border-slate-200/80 dark:border-slate-700/60">
@@ -36,7 +39,7 @@ export const CancellationsTab: React.FC<CancellationsTabProps> = ({
                 <td className="px-6 py-4 text-slate-500 dark:text-slate-400 font-mono text-xs">{booking.fechaSalida || "N/A"}</td>
                 <td className="px-6 py-4">
                   <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border border-red-100/80 dark:border-red-900/30">
-                    {booking.motivoCancelacion || "Anulación sin justificación"}
+                    {booking.motivoCancelacion || "Anulación sin justification"}
                   </span>
                 </td>
                 <td className="px-6 py-4 text-right font-bold text-red-600 dark:text-red-400">
@@ -48,9 +51,14 @@ export const CancellationsTab: React.FC<CancellationsTabProps> = ({
         </table>
       </div>
       
-      {cancelaciones.length === 0 && (
+      {cancelaciones.length === 0 ? (
         <div className="text-center py-12 text-slate-400 dark:text-slate-500 text-xs font-medium">
           Operación Limpia: No se registran cancelaciones financieras en este periodo.
+        </div>
+      ) : (
+        /* Seccion agregada para ver la pérdida total acumulada en la tabla */
+        <div className="px-6 py-4 text-right text-sm font-bold bg-slate-50/30 dark:bg-slate-900/20 text-rose-600 dark:text-rose-400 border-t border-slate-100 dark:border-slate-700/40">
+          Total Pérdidas por Anulación: {formatCurrency(perdidaTotal)}
         </div>
       )}
     </div>
